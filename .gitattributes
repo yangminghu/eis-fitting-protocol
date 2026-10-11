@@ -1,0 +1,12 @@
+# 强制 LF：技能包的 .py/.md 按 LF 存储，避免在 Windows 上被转成 CRLF
+* text=auto eol=lf
+
+# 二进制类型不做换行转换
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.zip  binary
+*.pdf  binary
+*.xlsx binary
+*.docx binary

@@ -1,0 +1,22 @@
+EIS 等效电路拟合规范（eis-fitting-protocol）
+Copyright 2026 Yangming Hu
+
+本产品由 Yangming Hu 独立开发，以 Apache License 2.0 授权。
+项目主页：https://github.com/yangminghu/eis-fitting-protocol
+
+运行环境与第三方依赖
+  本 skill 面向 DeepSeek Harness 制作，兼容其他支持 SKILL.md 的 agent，
+  也可打包为 zip 上传到 WorkBuddy 开放平台。
+  本仓库不包含、也不分发任何第三方库。技能脚本通过公开 API 调用下列依赖，
+  它们由运行环境提供（或使用者自行 pip 安装），各自适用其自身许可证：
+    pyimpspec                    GPL-3.0-or-later（仅官方实现对照 / 元素内省时需要）
+    DearEIS (deareis)            GPLv3 or later  （可选）
+    numpy / scipy                BSD-3-Clause
+    matplotlib                   PSF 风格
+    lmfit / sympy                BSD-3-Clause
+  详见「许可与第三方声明」文档（references/许可与第三方声明.md）
+
+归属
+  本产品与 Anthropic、DeepSeek、腾讯 WorkBuddy 及其他任何组织
+  无隶属、赞助或背书关系。文中提及的产品名称仅用于说明运行环境与兼容性，
+  相关商标归各自所有者。

@@ -1,0 +1,28 @@
+# ── 实验数据：绝不入库 ─────────────────────────────
+*.txt
+*.csv
+*.xlsx
+*.xls
+*.dat
+*.mpr
+*.z
+# 交付物压缩包（走 Release 附件，不进 git 历史）
+*.zip
+# 拟合产物目录
+work/
+results/
+# ── Python ──────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv*/
+venv/
+.ipynb_checkpoints/
+*.egg-info/
+# ── 编辑器 / 系统 ────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+# ── 临时 / 工作目录（防御性）──────────────────────
+_work/
+_scratch/
