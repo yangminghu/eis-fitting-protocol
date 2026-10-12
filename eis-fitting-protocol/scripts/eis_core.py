@@ -641,6 +641,7 @@ def _selftest():
     # [5] 官方实现对照：CDC **不带内联初值**，参数只能靠注入 ⇒ 注入失效会立刻暴露
     bad = TRUE.copy()
     bad[0] = 9999.0                      # 一个差别极大的参数集
+    official_failed = False
     try:
         vals_t = dict(zip(PARAM_NAMES, map(float, TRUE)))
         vals_b = dict(zip(PARAM_NAMES, map(float, bad)))
@@ -648,19 +649,27 @@ def _selftest():
         move = float(np.max(np.abs(z_b - z_t) / np.abs(z_t)))
         diff = compare_official("[RL(RQ)(RQ)Wo]", TRUE, f)
         diff_bad = compare_official("[RL(RQ)(RQ)Wo]", bad, f)
-    except KeyError as exc:
+    except ImportError:
+        # 没装 pyimpspec：这一项是**可选**的官方对照，跳过而不是失败
+        # （本模块的拟合核心只依赖 numpy/scipy；`--selftest` 不该因为缺可选依赖而退出非 0）
         move = diff = diff_bad = None
+    except KeyError as exc:
+        # 参数名对不上是真 bug（注入失效会让对照变成空转）⇒ 必须判 FAIL
+        move = diff = diff_bad = None
+        official_failed = True
         print(f"[5] 官方实现对照：FAIL（参数名对不上：{exc}）")
-    if diff is None:
-        print("[5] 官方实现对照：SKIP（未安装 pyimpspec）")
+    if official_failed:
+        pass                      # 上面已打印 FAIL，别再说"跳过"
+    elif diff is None:
+        print("[5] 官方实现对照：SKIP（未安装 pyimpspec —— 这一项是可选对照，不影响结论）")
     else:
         ok_move = move > 1e2             # 注入确实改变谱 ⇒ 对照不是空转
         ok_off = diff < 1e-12 and diff_bad < 1e-12
         print(f"[5] 官方实现对照：max 相对偏差 {diff:.2e}（换到 R1=9999 Ω 仍是 "
               f"{diff_bad:.2e}）{'PASS' if ok_off else 'CHECK'}；"
               f"注入敏感性 {move:.2e} {'PASS' if ok_move else 'FAIL（注入没生效＝对照空转）'}")
-    ok = ok_rec and ok_prof and ok_jac and (diff is None or (diff < 1e-12 and diff_bad < 1e-12
-                                                             and move > 1e2))
+    ok = (ok_rec and ok_prof and ok_jac and not official_failed
+          and (diff is None or (diff < 1e-12 and diff_bad < 1e-12 and move > 1e2)))
     print("=" * 78)
     print("SELFTEST", "PASS" if ok else "FAIL")
     return 0 if ok else 1

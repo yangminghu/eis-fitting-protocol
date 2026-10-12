@@ -52,8 +52,9 @@ jobs:
       - name: 隐私体检（通用规则）
         run: python tools/scan_privacy.py dist/eis-fitting-protocol-*.zip eis-fitting-protocol
 
-      - name: 安装依赖（仅拟合核心需要）
-        run: python -m pip install --quiet numpy scipy
+      - name: 安装依赖
+        # numpy/scipy 是拟合核心的必需依赖；pyimpspec 是可选的官方对照（装上才跑元素级互证）
+        run: python -m pip install --quiet numpy scipy pyimpspec
 
       - name: 拟合核心自检
         run: python eis-fitting-protocol/scripts/eis_core.py --selftest
