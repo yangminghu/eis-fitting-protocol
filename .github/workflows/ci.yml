@@ -1,18 +1,33 @@
 name: CI / Release
 
-# 打 tag（v*）→ 校验 + 打包 + 自动更新 Release（附件与描述）
-# 推 main / PR → 只校验，不发布
+# ─────────────────────────────────────────────────────────────────────────────
+# 流程总览
+#
+#   push main   →  [校验] 打包 → 5 道门禁 → 冒烟 → 存产物
+#   push tag v* →  [校验] 同上  →  [发布] 建/更新 Release（附件 + 描述）
+#
+# 门禁（任一不过就停）：
+#   1. 换行全 LF                     ← .gitattributes 回归保护
+#   2. 打包两次逐字节相同             ← 产物可复现
+#   3. check_package.py               ← 平台规范结构 + 许可自洽
+#   4. scan_privacy.py                ← 通用隐私规则（不含任何具体数据标识）
+#   5. eis_core.py --selftest         ← 拟合核心
+#   6. init_case + validate_eis_outputs ← 交付物工具链冒烟
+#
+# 校验与发布分成两个作业：发布作业才拿 contents:write，校验步骤只读。
+# ─────────────────────────────────────────────────────────────────────────────
 
 on:
   push:
     branches: [main]
     tags: ["v*"]
-  pull_request:
   workflow_dispatch:
 
 concurrency:
+  # 排队而不取消：重推同一个 tag 时若把上一次发布掐断，
+  # 可能出现"旧附件已删、新附件还没传"的空窗
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -22,13 +37,16 @@ jobs:
     name: 校验技能包
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: ① 取代码
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: ① Python 3.12
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: 换行必须全为 LF
+      # ── 门禁 1 ──────────────────────────────────────────────────────────
+      - name: ② 门禁 1/6：换行必须全为 LF
         run: |
           bad=$(git ls-files --eol | grep 'w/crlf' || true)
           if [ -n "$bad" ]; then
@@ -38,33 +56,40 @@ jobs:
           fi
           echo "全部 LF ✓"
 
-      - name: 打包（确定性：构建两次必须逐字节相同）
+      # ── 门禁 2 + 交付产物（只构建两次：交付件 + 复检件）─────────────────
+      - name: ② 门禁 2/6：打包两次必须逐字节相同
         run: |
-          python tools/build_zip.py dist/a.zip
-          python tools/build_zip.py dist/b.zip
-          cmp dist/a.zip dist/b.zip
-          echo "可复现 ✓"
-          python tools/build_zip.py "dist/eis-fitting-protocol-${{ github.ref_name }}.zip"
+          ZIP="dist/eis-fitting-protocol-${{ github.ref_name }}.zip"
+          python tools/build_zip.py "$ZIP"
+          python tools/build_zip.py dist/_recheck.zip
+          cmp "$ZIP" dist/_recheck.zip
+          rm dist/_recheck.zip
+          echo "可复现 ✓  $ZIP  ($(stat -c%s "$ZIP") B)"
 
-      - name: 包结构 + 许可自洽自检
+      # ── 门禁 3 ──────────────────────────────────────────────────────────
+      - name: ③ 门禁 3/6：包结构 + 许可自洽
         run: python eis-fitting-protocol/scripts/check_package.py dist/eis-fitting-protocol-*.zip
 
-      - name: 隐私体检（通用规则）
-        run: python tools/scan_privacy.py dist/eis-fitting-protocol-*.zip eis-fitting-protocol
+      # ── 门禁 4（只扫交付物 zip：它与包目录同源，扫两遍是重复劳动）────────
+      - name: ④ 门禁 4/6：隐私体检
+        run: python tools/scan_privacy.py dist/eis-fitting-protocol-*.zip
 
-      - name: 安装依赖
-        # numpy/scipy 是拟合核心的必需依赖；pyimpspec 是可选的官方对照（装上才跑元素级互证）
+      # ── 门禁 5/6 需要依赖 ───────────────────────────────────────────────
+      - name: ⑤ 安装依赖
+        # numpy/scipy = 拟合核心必需；pyimpspec = 可选的官方元素级对照（装上才真跑，否则 SKIP）
         run: python -m pip install --quiet numpy scipy pyimpspec
 
-      - name: 拟合核心自检
+      - name: ⑤ 门禁 5/6：拟合核心自检
         run: python eis-fitting-protocol/scripts/eis_core.py --selftest
 
-      - name: 案例骨架 + 校验器冒烟测试
+      - name: ⑥ 门禁 6/6：案例骨架 + 校验器冒烟
         run: |
           python eis-fitting-protocol/scripts/init_case.py /tmp/case --case-name ci
           python eis-fitting-protocol/scripts/validate_eis_outputs.py /tmp/case
 
-      - uses: actions/upload-artifact@v4
+      # ── 产物（发布作业只认这一份，保证"发布的就是校验过的"）─────────────
+      - name: ⑦ 存产物
+        uses: actions/upload-artifact@v4
         with:
           name: package-zip
           path: dist/eis-fitting-protocol-*.zip
@@ -76,16 +101,18 @@ jobs:
     needs: verify
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write          # 只有这个作业需要写权限
     steps:
-      - uses: actions/checkout@v4
+      - name: 取 RELEASE_NOTES.md
+        uses: actions/checkout@v4
 
-      - uses: actions/download-artifact@v4
+      - name: 取校验过的产物
+        uses: actions/download-artifact@v4
         with:
           name: package-zip
           path: dist
 
-      - name: 创建或更新 Release（附件 + 描述）
+      - name: 建 / 更新 Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
@@ -94,35 +121,31 @@ jobs:
           ZIP=$(ls dist/*.zip | head -n1)
           echo "附件：$ZIP  ($(stat -c%s "$ZIP") B)"
 
+          # 描述：优先用 RELEASE_NOTES.md（里面必须提到本 tag）
           if [ -f RELEASE_NOTES.md ] && grep -qF "$TAG" RELEASE_NOTES.md; then
             NOTES=(--notes-file RELEASE_NOTES.md)
-            echo "描述：RELEASE_NOTES.md"
           else
             NOTES=(--generate-notes)
             echo "::warning::RELEASE_NOTES.md 未提到 $TAG，改用自动生成的发布说明"
           fi
+          TITLE="EIS 等效电路拟合规范 $TAG"
 
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release 已存在 → 更新描述并覆盖附件"
-            gh release edit "$TAG" --title "EIS 等效电路拟合规范 $TAG" "${NOTES[@]}"
-            # 清理过期附件：附件的 --clobber 只覆盖**同名**文件，改过名就会新旧并存
-            EXPECTED="$(basename "$ZIP")"
-            while IFS= read -r name; do
-              [ -z "$name" ] && continue
+            echo "Release 已存在 → 更新描述与附件"
+            gh release edit "$TAG" --title "$TITLE" "${NOTES[@]}"
+            # --clobber 只覆盖同名附件；改过名会新旧并存，所以先清掉过期的那几个
+            EXPECTED=$(basename "$ZIP")
+            for name in $(gh release view "$TAG" --json assets --jq '.assets[].name'); do
               case "$name" in
                 eis-fitting-protocol-*.zip)
-                  if [ "$name" != "$EXPECTED" ]; then
-                    echo "删除过期附件：$name"
-                    gh release delete-asset "$TAG" "$name" --yes
-                  fi
+                  [ "$name" = "$EXPECTED" ] || { echo "删除过期附件：$name"; gh release delete-asset "$TAG" "$name" --yes; }
                   ;;
               esac
-            done <<< "$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+            done
             gh release upload "$TAG" "$ZIP" --clobber
           else
             echo "新建 Release"
-            gh release create "$TAG" "$ZIP" \
-              --title "EIS 等效电路拟合规范 $TAG" "${NOTES[@]}"
+            gh release create "$TAG" "$ZIP" --title "$TITLE" "${NOTES[@]}"
           fi
 
           echo "--- 结果 ---"
