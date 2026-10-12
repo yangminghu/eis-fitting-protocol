@@ -1,0 +1,116 @@
+name: CI / Release
+
+# 打 tag（v*）→ 校验 + 打包 + 自动更新 Release（附件与描述）
+# 推 main / PR → 只校验，不发布
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: 校验技能包
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 换行必须全为 LF
+        run: |
+          bad=$(git ls-files --eol | grep 'w/crlf' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::存在 CRLF 工作区文件，请检查 .gitattributes"
+            echo "$bad"
+            exit 1
+          fi
+          echo "全部 LF ✓"
+
+      - name: 打包（确定性：构建两次必须逐字节相同）
+        run: |
+          python tools/build_zip.py dist/a.zip
+          python tools/build_zip.py dist/b.zip
+          cmp dist/a.zip dist/b.zip
+          echo "可复现 ✓"
+          python tools/build_zip.py "dist/eis-fitting-protocol-${{ github.ref_name }}.zip"
+
+      - name: 包结构 + 许可自洽自检
+        run: python eis-fitting-protocol/scripts/check_package.py dist/eis-fitting-protocol-*.zip
+
+      - name: 隐私体检（通用规则）
+        run: python tools/scan_privacy.py dist/eis-fitting-protocol-*.zip eis-fitting-protocol
+
+      - name: 安装依赖（仅拟合核心需要）
+        run: python -m pip install --quiet numpy scipy
+
+      - name: 拟合核心自检
+        run: python eis-fitting-protocol/scripts/eis_core.py --selftest
+
+      - name: 案例骨架 + 校验器冒烟测试
+        run: |
+          python eis-fitting-protocol/scripts/init_case.py /tmp/case --case-name ci
+          python eis-fitting-protocol/scripts/validate_eis_outputs.py /tmp/case
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-zip
+          path: dist/eis-fitting-protocol-*.zip
+          if-no-files-found: error
+
+  publish:
+    name: 发布 / 更新 Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: package-zip
+          path: dist
+
+      - name: 创建或更新 Release（附件 + 描述）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ZIP=$(ls dist/*.zip | head -n1)
+          echo "附件：$ZIP  ($(stat -c%s "$ZIP") B)"
+
+          if [ -f RELEASE_NOTES.md ] && grep -qF "$TAG" RELEASE_NOTES.md; then
+            NOTES=(--notes-file RELEASE_NOTES.md)
+            echo "描述：RELEASE_NOTES.md"
+          else
+            NOTES=(--generate-notes)
+            echo "::warning::RELEASE_NOTES.md 未提到 $TAG，改用自动生成的发布说明"
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release 已存在 → 更新描述并覆盖附件"
+            gh release edit "$TAG" --title "EIS 等效电路拟合规范 $TAG" "${NOTES[@]}"
+            gh release upload "$TAG" "$ZIP" --clobber
+          else
+            echo "新建 Release"
+            gh release create "$TAG" "$ZIP" \
+              --title "EIS 等效电路拟合规范 $TAG" "${NOTES[@]}"
+          fi
+
+          echo "--- 结果 ---"
+          gh release view "$TAG" --json url,assets \
+            --jq '.url, (.assets[] | "\(.name)  \(.size) B")'

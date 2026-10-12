@@ -11,6 +11,8 @@
 # 拟合产物目录
 work/
 results/
+# CI 构建产物（走 Release 附件）
+dist/
 # ── Python ──────────────────────────────────────
 __pycache__/
 *.py[cod]
