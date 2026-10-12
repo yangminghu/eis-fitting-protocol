@@ -105,6 +105,19 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release 已存在 → 更新描述并覆盖附件"
             gh release edit "$TAG" --title "EIS 等效电路拟合规范 $TAG" "${NOTES[@]}"
+            # 清理过期附件：附件的 --clobber 只覆盖**同名**文件，改过名就会新旧并存
+            EXPECTED="$(basename "$ZIP")"
+            while IFS= read -r name; do
+              [ -z "$name" ] && continue
+              case "$name" in
+                eis-fitting-protocol-*.zip)
+                  if [ "$name" != "$EXPECTED" ]; then
+                    echo "删除过期附件：$name"
+                    gh release delete-asset "$TAG" "$name" --yes
+                  fi
+                  ;;
+              esac
+            done <<< "$(gh release view "$TAG" --json assets --jq '.assets[].name')"
             gh release upload "$TAG" "$ZIP" --clobber
           else
             echo "新建 Release"

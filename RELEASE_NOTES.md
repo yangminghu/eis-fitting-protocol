@@ -30,7 +30,7 @@
 
 **DeepSeek Harness（推荐）** —— 把 `eis-fitting-protocol/` 整个目录放进 DSH 扫描的技能目录（项目级 `.dsh/skills/` 或用户级 `<dshHome>/skills/`，以 DSH 官方文档为准）；也可以直接 `python eis-fitting-protocol/scripts/install.py`。
 
-**WorkBuddy 开放平台** —— 下载下方 Assets 里的 `eis-fitting-protocol-v6.1.zip`（13 条目，根结构 = `SKILL.md` + `references/` + `scripts/`）直接上传。
+**WorkBuddy 开放平台** —— 下载下方 Assets 里的 `eis-fitting-protocol-v6.1.0.zip`（13 条目，根结构 = `SKILL.md` + `references/` + `scripts/`）直接上传。
 
 **其他支持 `SKILL.md` 的 agent**（Claude Code / Codex 等）—— 把 `SKILL.md` 当提示词或按各自的技能目录约定放置即可。
 
